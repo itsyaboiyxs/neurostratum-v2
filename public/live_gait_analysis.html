@@ -3,50 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Gait Analysis</title>
+    <title>Live Gait Analysis - NeuroStratum</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #0f172a; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
-        .camera-box { position: relative; width: 640px; height: 480px; background: #000; border-radius: 10px; overflow: hidden; }
+        body { font-family: Arial, sans-serif; background-color: #0f172a; color: #fff; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .camera-box { position: relative; width: 640px; height: 480px; background: #000; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; }
+        .stats-box { position: absolute; bottom: 10px; left: 10px; right: 10px; background: rgba(30, 41, 59, 0.9); padding: 12px; border-radius: 8px; display: flex; justify-content: space-around; }
+        .stat-card { text-align: center; }
+        .stat-value { font-size: 16px; font-weight: bold; color: #38bdf8; }
+        .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }
         .controls { margin-top: 15px; display: flex; gap: 10px; }
-        button, a { padding: 10px 20px; border: none; border-radius: 5px; background: #38bdf8; color: #0f172a; text-decoration: none; cursor: pointer; font-weight: bold; }
+        button, a { padding: 10px 20px; border: none; border-radius: 5px; background: #38bdf8; color: #0f172a; text-decoration: none; cursor: pointer; font-weight: bold; font-size: 14px; }
         button:hover, a:hover { background: #0284c7; color: #fff; }
+        button:disabled { background: #475569; cursor: not-allowed; color: #94a3b8; }
+        .rec-active { background: #ef4444 !important; color: white !important; }
+        #loading-msg { display: none; margin-top: 10px; color: #38bdf8; font-weight: bold; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <h2>Live Gait Tracker</h2>
+    <h2>Live Gait Analysis</h2>
     <div class="camera-box">
         <video id="webcam" autoplay playsinline></video>
         <canvas id="output_canvas"></canvas>
+
+        <div class="stats-box">
+            <div class="stat-card">
+                <div class="stat-value" id="val-lknee">0.0°</div>
+                <div class="stat-label">L-Knee Angle</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="val-rknee">0.0°</div>
+                <div class="stat-label">R-Knee Angle</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="val-sep">0.0</div>
+                <div class="stat-label">Ankle Sep</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="val-asym">0.0°</div>
+                <div class="stat-label">Asymmetry</div>
+            </div>
+        </div>
     </div>
+
+    <div id="loading-msg">Processing gait metrics, querying Ollama LLM & generating PDF... Please wait.</div>
+
     <div class="controls">
         <button id="start-btn" onclick="toggleCamera()">Start Tracking</button>
+        <button id="rec-btn" onclick="toggleRecording()" disabled>Start Recording Session</button>
+        <a href="/uploadable_long_term_gait">Upload CSV Page</a>
         <a href="/">Home</a>
     </div>
+
     <script>
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
         let camera = null;
         let isRunning = false;
+        let isRecording = false;
+        let recordedFrames = [];
+        let frameCounter = 0;
+        let startTime = 0;
 
-        const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
-        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        function calcAngle(a, b, c) {
+            const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(radians * 180.0 / Math.PI);
+            return angle > 180.0 ? 360 - angle : angle;
+        }
 
         pose.onResults((results) => {
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             if (!results.poseLandmarks) return;
-            fetch('/api/analyze_frame', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: 'gait', landmarks: results.poseLandmarks })
-            }).catch(err => console.error(err));
+
+            const lm = results.poseLandmarks;
+            const lKnee = calcAngle(lm[23], lm[25], lm[27]);
+            const rKnee = calcAngle(lm[24], lm[26], lm[28]);
+            const sep = Math.abs(lm[27].x - lm[28].x) * 100;
+            const asym = Math.abs(lKnee - rKnee);
+
+            document.getElementById('val-lknee').innerText = lKnee.toFixed(1) + '°';
+            document.getElementById('val-rknee').innerText = rKnee.toFixed(1) + '°';
+            document.getElementById('val-sep').innerText = sep.toFixed(1);
+            document.getElementById('val-asym').innerText = asym.toFixed(1) + '°';
+
+            if (isRecording) {
+                frameCounter++;
+                recordedFrames.push({
+                    frame: frameCounter,
+                    timestamp_ms: Date.now() - startTime,
+                    keypoints: lm
+                });
+            }
         });
 
         async function toggleCamera() {
             const btn = document.getElementById('start-btn');
+            const recBtn = document.getElementById('rec-btn');
+
             if (!isRunning) {
                 canvasElement.width = 640; canvasElement.height = 480;
                 camera = new Camera(videoElement, {
@@ -56,10 +123,67 @@
                 await camera.start();
                 isRunning = true;
                 btn.innerText = "Stop Tracking";
+                recBtn.disabled = false;
             } else {
                 isRunning = false;
+                if (isRecording) stopAndProcessRecording();
                 if (camera) await camera.stop();
                 btn.innerText = "Start Tracking";
+                recBtn.disabled = true;
+            }
+        }
+
+        function toggleRecording() {
+            const recBtn = document.getElementById('rec-btn');
+            if (!isRecording) {
+                isRecording = true;
+                recordedFrames = [];
+                frameCounter = 0;
+                startTime = Date.now();
+                recBtn.innerText = "Stop & Generate PDF Report";
+                recBtn.classList.add('rec-active');
+            } else {
+                stopAndProcessRecording();
+            }
+        }
+
+        async function stopAndProcessRecording() {
+            const recBtn = document.getElementById('rec-btn');
+            const loadingMsg = document.getElementById('loading-msg');
+            isRecording = false;
+            recBtn.innerText = "Start Recording Session";
+            recBtn.classList.remove('rec-active');
+
+            if (recordedFrames.length === 0) {
+                alert("No valid frames captured.");
+                return;
+            }
+
+            loadingMsg.style.display = "block";
+            recBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/analyze_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ landmarks: recordedFrames })
+                });
+
+                if (!response.ok) throw new Error("Processing failed.");
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `NeuroStratum_Live_Report_${Date.now()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                alert("Error generating PDF report: " + err.message);
+            } finally {
+                loadingMsg.style.display = "none";
+                recBtn.disabled = false;
             }
         }
     </script>
