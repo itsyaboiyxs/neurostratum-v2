@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Gait Analysis</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0f172a; color: #fff; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+        .camera-box { position: relative; width: 640px; height: 480px; background: #000; border-radius: 10px; overflow: hidden; }
+        video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; }
+        button, a { padding: 10px 20px; border: none; border-radius: 5px; background: #38bdf8; color: #0f172a; text-decoration: none; cursor: pointer; font-weight: bold; }
+        button:hover, a:hover { background: #0284c7; color: #fff; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <h2>Live Gait Tracker</h2>
+    <div class="camera-box">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+    <div class="controls">
+        <button id="start-btn" onclick="toggleCamera()">Start Tracking</button>
+        <a href="/">Home</a>
+    </div>
+    <script>
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        let camera = null;
+        let isRunning = false;
+
+        const pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+        pose.onResults((results) => {
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            if (!results.poseLandmarks) return;
+            fetch('/api/analyze_frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'gait', landmarks: results.poseLandmarks })
+            }).catch(err => console.error(err));
+        });
+
+        async function toggleCamera() {
+            const btn = document.getElementById('start-btn');
+            if (!isRunning) {
+                canvasElement.width = 640; canvasElement.height = 480;
+                camera = new Camera(videoElement, {
+                    onFrame: async () => { if (isRunning) await pose.send({ image: videoElement }); },
+                    width: 640, height: 480
+                });
+                await camera.start();
+                isRunning = true;
+                btn.innerText = "Stop Tracking";
+            } else {
+                isRunning = false;
+                if (camera) await camera.stop();
+                btn.innerText = "Start Tracking";
+            }
+        }
+    </script>
+</body>
+</html>

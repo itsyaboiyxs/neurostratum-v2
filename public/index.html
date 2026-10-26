@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroStratum: Gait and Posture Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        .container { width: 100%; max-width: 800px; text-align: center; padding: 20px; }
+        h1 { font-size: 2.5rem; color: #38bdf8; margin-bottom: 5px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 30px; }
+        .card { background: #1e293b; border: 1px solid #334155; padding: 20px; border-radius: 10px; }
+        .btn { display: inline-block; margin-top: 15px; background: #38bdf8; color: #0f172a; padding: 10px 15px; border-radius: 5px; text-decoration: none; font-weight: bold; }
+        .btn:hover { background: #0284c7; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NEUROSTRATUM</h1>
+        <p>Real-time biomechanics engine & automated gait screening</p>
+        <div class="grid">
+            <div class="card">
+                <h3>Live Gait Tracker</h3>
+                <p>Track steps and angles live via webcam.</p>
+                <a href="/live_gait_analysis" class="btn">Launch Tracker</a>
+            </div>
+            <div class="card">
+                <h3>PDF Diagnostics</h3>
+                <p>Upload gait CSV to generate PDF evaluation.</p>
+                <a href="/uploadable_long_term_gait" class="btn">Upload Data</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
