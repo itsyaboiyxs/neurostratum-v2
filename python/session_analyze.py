@@ -5,23 +5,13 @@ import numpy as np
 from scipy.signal import find_peaks
 
 def compute_confidence_score(df):
-    """Computes a confidence score (0-100%) based on landmark visibility and positional jitter."""
-    # Critical keypoints for confidence: hips (23,24), knees (25,26), ankles (27,28)
     critical_indices = [23, 24, 25, 26, 27, 28]
     subset = df[df['landmark_index'].isin(critical_indices)]
-    
     if subset.empty:
         return 0.0
-
-    # Mean visibility score (0.0 to 1.0)
     mean_visibility = subset['visibility'].mean()
-
-    # Jitter estimation: compute frame-to-frame positional variance (smoothness)
-    # Lower jitter means higher stability/confidence
     jitter = subset.groupby('landmark_index')[['x', 'y']].diff().pow(2).sum(axis=1).mean()
-    jitter_penalty = min(float(jitter) * 500.0, 50.0) # scale penalty
-
-    # Base confidence from visibility (up to 50%) plus stability bonus minus jitter penalty
+    jitter_penalty = min(float(jitter) * 500.0, 50.0)
     confidence = (mean_visibility * 50.0) + (50.0 - jitter_penalty)
     return round(max(0.0, min(100.0, confidence)), 1)
 
@@ -32,7 +22,6 @@ def compute_metrics(csv_path, user_height_cm=170.0):
     scale = user_height_cm / 1.7
     confidence_score = compute_confidence_score(df)
 
-    # Gait Metrics via Ankle Distance
     l_ankle = df[df['landmark_index'] == 27][['timestamp_ms', 'x', 'y']].set_index('timestamp_ms')
     r_ankle = df[df['landmark_index'] == 28][['timestamp_ms', 'x', 'y']].set_index('timestamp_ms')
     
@@ -50,11 +39,9 @@ def compute_metrics(csv_path, user_height_cm=170.0):
     else:
         cadence, mean_step_length, asymmetry, step_time_variability = 110.0, 50.0, 0.0, 0.0
 
-    # Knee ROM
     l_knee = df[df['landmark_index'] == 25][['y']].values
     knee_rom = float(np.ptp(l_knee)) * 90.0 if len(l_knee) > 0 else 45.0
 
-    # Posture Metrics
     l_sh = df[df['landmark_index'] == 11][['y']].values
     r_sh = df[df['landmark_index'] == 12][['y']].values
     shoulder_tilt = float(np.mean(np.abs(l_sh - r_sh))) * scale if len(l_sh) > 0 and len(r_sh) > 0 else 1.0
@@ -67,7 +54,12 @@ def compute_metrics(csv_path, user_height_cm=170.0):
     else:
         forward_head = 2.0
 
+    # Heuristic classification for prototype demo (Good vs Weird)
+    is_weird = (asymmetry > 6.0) or (cadence < 90 or cadence > 140) or (step_time_variability > 6.0)
+    classification = "Weird / Anomalous Gait" if is_weird else "Good / Normal Gait"
+
     metrics = {
+        "classification": classification,
         "confidenceScore": confidence_score,
         "cadence": round(float(cadence), 1),
         "leftStepTime": 0.5,
@@ -83,12 +75,10 @@ def compute_metrics(csv_path, user_height_cm=170.0):
     }
 
     flags = []
+    if is_weird:
+        flags.append("Movement anomaly flagged; may indicate atypical gait patterns. Consider consulting a physiotherapist.")
     if confidence_score < 60.0:
         flags.append("Low tracking confidence detected; poor lighting or occlusion may affect accuracy. Consider consulting a physiotherapist.")
-    if metrics["cadence"] < 95 or metrics["cadence"] > 140:
-        flags.append("Cadence anomaly detected; may indicate gait instability. Consider consulting a physiotherapist.")
-    if metrics["asymmetry"] > 5.0:
-        flags.append("Left-right step asymmetry observed; may indicate compensatory movement patterns.")
 
     return {"metrics": metrics, "flags": flags}
 
