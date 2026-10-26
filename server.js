@@ -19,8 +19,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(express.json({ limit: '100mb' }));
 
 // Static HTML Page Routes
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
@@ -59,17 +59,17 @@ app.post('/api/analyze_session', (req, res) => {
     const pdfFileName = `NeuroStratum_Report_${timestamp}.pdf`;
     const pdfFilePath = path.join(__dirname, pdfFileName);
 
-    // Build CSV from landmark time series
     let csvLines = ['frame,timestamp_ms,landmark_index,x,y,z,visibility'];
     landmarks.forEach((frameObj) => {
-        frameObj.keypoints.forEach((lm, idx) => {
-            csvLines.push(`${frameObj.frame},${frameObj.timestamp_ms},${idx},${lm.x},${lm.y},${lm.z || 0.0},${lm.visibility || 1.0}`);
-        });
+        if (frameObj.keypoints && Array.isArray(frameObj.keypoints)) {
+            frameObj.keypoints.forEach((lm, idx) => {
+                csvLines.push(`${frameObj.frame},${frameObj.timestamp_ms},${idx},${lm.x},${lm.y},${lm.z || 0.0},${lm.visibility || 1.0}`);
+            });
+        }
     });
 
     fs.writeFileSync(csvFilePath, csvLines.join('\n'));
 
-    // Spawn python PDF generator (runs session_analyze + Ollama LLM + FPDF2)
     const pyProcess = spawn('python', ['python/gait_pdf_generator.py', csvFilePath, pdfFilePath]);
 
     pyProcess.on('close', (code) => {
